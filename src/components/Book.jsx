@@ -1,7 +1,129 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import HTMLFlipBook from "react-pageflip";
 
 function Book() {
+  const flipBookRef = useRef(null);
+  const audioRef = useRef(null);
+
+  const audioContextRef = useRef(null);
+  const audioBufferRef = useRef(null);
+  const lastPlayTimeRef = useRef(0);
+
+  // Initialize Web Audio API for instant playback
+  useEffect(() => {
+    const initAudio = async () => {
+      try {
+        audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Load and decode audio file
+        const response = await fetch('/sounds/book_page-45210.mp3');
+        const arrayBuffer = await response.arrayBuffer();
+        audioBufferRef.current = await audioContextRef.current.decodeAudioData(arrayBuffer);
+        
+        console.log('Audio buffer loaded successfully');
+      } catch (error) {
+        console.log('Failed to load audio buffer:', error);
+      }
+    };
+    
+    initAudio();
+
+    // Audio is now ready for use
+  }, []);
+
+  // Play page flip sound with Web Audio API (instant playback)
+  const playPageFlipSound = () => {
+    // Minimal debounce - prevent duplicate sounds within 100ms only
+    const now = Date.now();
+    if (now - lastPlayTimeRef.current < 100) {
+      return;
+    }
+    lastPlayTimeRef.current = now;
+
+    console.log('Playing page flip sound...'); // Debug log
+    
+    // Use setTimeout with negative delay concept - schedule immediately
+    setTimeout(() => {
+      try {
+        if (audioContextRef.current && audioBufferRef.current) {
+          const source = audioContextRef.current.createBufferSource();
+          const gainNode = audioContextRef.current.createGain();
+          
+          source.buffer = audioBufferRef.current;
+          gainNode.gain.value = 0.7;
+          
+          source.connect(gainNode);
+          gainNode.connect(audioContextRef.current.destination);
+          
+          source.start(0);
+          console.log('Audio played successfully with Web Audio API');
+        } else {
+          console.log('Audio buffer not ready, using fallback');
+          playSyntheticPageFlipSound();
+        }
+      } catch (error) {
+        console.log('Web Audio API failed:', error);
+        playSyntheticPageFlipSound();
+      }
+    }, 0); // Execute immediately but asynchronously
+  };
+
+  // Fallback synthetic sound (in case audio file is missing)
+  const playSyntheticPageFlipSound = () => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Create multiple oscillators to simulate paper rustling
+    const createNoise = () => {
+      const bufferSize = audioContext.sampleRate * 0.2; // 0.2 seconds
+      const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+      const output = buffer.getChannelData(0);
+      
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1; // White noise
+      }
+      
+      const whiteNoise = audioContext.createBufferSource();
+      whiteNoise.buffer = buffer;
+      
+      const filter = audioContext.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 2000;
+      filter.Q.value = 0.5;
+      
+      const gainNode = audioContext.createGain();
+      gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.2);
+      
+      whiteNoise.connect(filter);
+      filter.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      whiteNoise.start(audioContext.currentTime);
+      whiteNoise.stop(audioContext.currentTime + 0.2);
+    };
+    
+    // Add a subtle low-frequency thump for the page impact
+    const createThump = () => {
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+      
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      
+      oscillator.frequency.setValueAtTime(60, audioContext.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(30, audioContext.currentTime + 0.05);
+      
+      gainNode.gain.setValueAtTime(0.05, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.05);
+      
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.05);
+    };
+    
+    // Play both sounds together for realistic page flip
+    createNoise();
+    createThump();
+  };
 
   const bookChapters = [
     {
@@ -42,7 +164,7 @@ function Book() {
     {
       id: "06",
       title: "The Final Challenge",
-      chapter: "Chapter 6",
+      chapter: "Chapter 6",  
       pageHeader: "PAGE HEADER - 6",
       description: "At the realm's heart stood the Tower of Trials, where Alex faced their greatest challenge. The tower tested not just strength and magic, but wisdom, courage, and compassion. Only by proving worthy of all these virtues could the realm be saved. The Tower of Trials was a magnificent structure that seemed to reach beyond the clouds."
     },
@@ -57,12 +179,23 @@ function Book() {
 
   return (
     <HTMLFlipBook 
+      ref={flipBookRef}
       width={420} 
       height={580}
       maxShadowOpacity={0.5}
       drawShadow={true}
       showCover={true}
       size='fixed'
+       onFlip={(e) => {
+         // Play sound when page flip starts
+         console.log('onFlip triggered - page:', e.data);
+         playPageFlipSound();
+       }}
+       onFlipInit={(e) => {
+         // Play sound immediately when flip initializes (earliest possible)
+         console.log('onFlipInit triggered');
+         playPageFlipSound();
+       }}
     >
       <div className="page" style={{ background: 'transparent' }}>
         <div className="page-content cover">
